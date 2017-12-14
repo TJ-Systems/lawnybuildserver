@@ -1,3 +1,4 @@
+"""Build Server Creation"""
 #! /usr/bin/python2.7
 
 #Copyright 2017 lawny.co
@@ -8,34 +9,35 @@ import time
 from six.moves import input
 import googleapiclient.discovery
 from oauth2client.client import GoogleCredentials
-credentials = GoogleCredentials.get_application_default()
+CREDENTIALS = GoogleCredentials.get_application_default()
 
-compute = googleapiclient.discovery.build('compute', 'v1')
+COMPUTE = googleapiclient.discovery.build('compute', 'v1')
 
-# [START list_instance_groups]
+ #[START list_instance_groups]
 def list_instance_groups(compute, project, zone):
+    """ list all the instance groups in project/zone """
     result = compute.instanceGroups().list(project=project, zone=zone).execute()
     return result['items']
 # [END list_instance_groups]
 
 # [START list_instances]
 def list_instances(compute, project, zone):
+    """ list all the instance in project/zone """
     result = compute.instances().list(project=project, zone=zone).execute()
     return result['items']
 # [END list_instances]
 
 # [START create_instance_group]
 def create_instance_group(compute, project, zone, igname):
-    #Get the network and subnetwork
+    """ Create the new instance group """
     network_response = compute.network().get(
         project=project, network='devops').execute()
     network = network_response['selflink']
-    
+
     subnetwork_response = compute.subnetwork().get(
         project=project, region=zone, subnetwork='buildservers').execute()
     subnetwork = subnetwork_response['selfLink']
 
-    #Configure the instance group
     config = {
         'description': 'Instance Group for build server',
         'name': igname,
@@ -52,6 +54,7 @@ def create_instance_group(compute, project, zone, igname):
 
 # [START create_instance]
 def create_instance(compute, project, zone, servername):
+    """ Create the new instance """
     # Get the latest Debian Jessie image.
     image_response = compute.images().getFromFamily(
         project='debian-cloud', family='debian-8').execute()
@@ -114,6 +117,7 @@ def create_instance(compute, project, zone, servername):
 
 # [START wait_for_operation]
 def wait_for_operation(compute, project, zone, operation):
+    """ Check the status of the current operation """
     print 'Waiting for operation to finish...'
     while True:
         result = compute.zoneOperations().get(
@@ -139,22 +143,23 @@ def wait_for_operation(compute, project, zone, operation):
 # [END artifact upload]
 
 # [Build the instance]
-def main(project, zone, instance_name, wait=False):
+def main(project, zone, igname, instance_name, wait=False):
+    """ Execution of the steps """
     compute = googleapiclient.discovery.build('compute', 'v1')
-    
+
     print 'Creating Instance Group...'
 
     operation = create_instance_group(compute, project, zone, igname)
     wait_for_operation(compute, project, zone, operation['name'])
 
-    instancegroups= list_instance_groups(compute, project, zone)
+    instancegroups = list_instance_groups(compute, project, zone)
 
     print 'Instance groups in project %s and zone %s:' % (project, zone)
     for instancegroup in instancegroups:
-        print ' - ' + instancegroup['name']   
+        print ' - ' + instancegroup['name']
 
     print 'Creating instance...'
-    
+
     operation = create_instance(compute, project, zone, instance_name)
     wait_for_operation(compute, project, zone, operation['name'])
 
@@ -171,20 +176,20 @@ Instance created.
         input()
 
 if __name__ == '__main__':
-    parser = argparse.ArgumentParser(
+    PARSER = argparse.ArgumentParser(
         description=__doc__,
         formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument('project_id', help='Your Google Cloud project ID.')
-    parser.add_argument(
+    PARSER.add_argument('project_id', help='Your Google Cloud project ID.')
+    PARSER.add_argument(
         '--zone',
         default='us-central1-f',
         help='Compute Engine zone to deploy to.')
-    parser.add_argument(
-        '--servername', default='demo-instance', help='New instance name.')
-    parser.add_argument(
+    PARSER.add_argument(
         '--igname', default='demo-instance', help='Instance group name.')
+    PARSER.add_argument(
+        '--name', default='demo-instance', help='New instance name.')
 
-    args = parser.parse_args()
+    ARGS = PARSER.parse_args()
 
-    main(args.project_id, args.zone, args.name)
+    main(ARGS.project_id, ARGS.zone, ARGS.igname, ARGS.name)
 # [END run]
