@@ -12,14 +12,46 @@ credentials = GoogleCredentials.get_application_default()
 
 compute = googleapiclient.discovery.build('compute', 'v1')
 
+# [START list_instance_groups]
+def list_instance_groups(compute, project, zone):
+    result = compute.instanceGroups().list(project=project, zone=zone).execute()
+    return result['items']
+# [END list_instance_groups]
+
 # [START list_instances]
 def list_instances(compute, project, zone):
     result = compute.instances().list(project=project, zone=zone).execute()
     return result['items']
 # [END list_instances]
 
+# [START create_instance_group]
+def create_instance_group(compute, project, zone, igname):
+    #Get the network and subnetwork
+    network_response = compute.network().get(
+        project=project, network='devops').execute()
+    network = network_response['selflink']
+    
+    subnetwork_response = compute.subnetwork().get(
+        project=project, region=zone, subnetwork='buildservers').execute()
+    subnetwork = subnetwork_response['selfLink']
+
+    #Configure the instance group
+    config = {
+        'description': 'Instance Group for build server',
+        'name': igname,
+        'network': network,
+        'region': zone,
+        'subnetwork': subnetwork
+    }
+
+    return compute.instanceGroups().insert(
+        project=project,
+        zone=zone,
+        body=config).execute()
+# [END create_instance_group]
+
 # [START create_instance]
-def create_instance(compute, project, zone, name):
+def create_instance(compute, project, zone, servername):
     # Get the latest Debian Jessie image.
     image_response = compute.images().getFromFamily(
         project='debian-cloud', family='debian-8').execute()
@@ -31,7 +63,7 @@ def create_instance(compute, project, zone, name):
         os.path.join(
             os.path.dirname(__file__), 'sscript.sh'), 'r').read()
     config = {
-        'name': name,
+        'name': servername,
         'machineType': machine_type,
 
         # Specify the boot disk and the image to use as a source.
@@ -109,9 +141,20 @@ def wait_for_operation(compute, project, zone, operation):
 # [Build the instance]
 def main(project, zone, instance_name, wait=False):
     compute = googleapiclient.discovery.build('compute', 'v1')
+    
+    print 'Creating Instance Group...'
 
-    print 'Creating instance.'
+    operation = create_instance_group(compute, project, zone, igname)
+    wait_for_operation(compute, project, zone, operation['name'])
 
+    instancegroups= list_instance_groups(compute, project, zone)
+
+    print 'Instance groups in project %s and zone %s:' % (project, zone)
+    for instancegroup in instancegroups:
+        print ' - ' + instancegroup['name']   
+
+    print 'Creating instance...'
+    
     operation = create_instance(compute, project, zone, instance_name)
     wait_for_operation(compute, project, zone, operation['name'])
 
@@ -137,7 +180,9 @@ if __name__ == '__main__':
         default='us-central1-f',
         help='Compute Engine zone to deploy to.')
     parser.add_argument(
-        '--name', default='demo-instance', help='New instance name.')
+        '--servername', default='demo-instance', help='New instance name.')
+    parser.add_argument(
+        '--igname', default='demo-instance', help='Instance group name.')
 
     args = parser.parse_args()
 
