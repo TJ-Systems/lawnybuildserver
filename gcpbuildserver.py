@@ -1,5 +1,5 @@
-"""Build Server Creation"""
 #! /usr/bin/python2.7
+"""Build Server Creation"""
 
 #Copyright 2017 lawny.co
 
@@ -10,13 +10,13 @@ from six.moves import input
 import googleapiclient.discovery
 from oauth2client.client import GoogleCredentials
 CREDENTIALS = GoogleCredentials.get_application_default()
-
+NETWORK = 'devops-internal'
 COMPUTE = googleapiclient.discovery.build('compute', 'v1')
 
  #[START list_instance_groups]
 def list_instance_groups(compute, project, zone):
     """ list all the instance groups in project/zone """
-    result = compute.instanceGroups().list(project=project, zone=zone).execute()
+    result = compute.InstanceGroups().list(project=project, zone=zone).execute()
     return result['items']
 # [END list_instance_groups]
 
@@ -28,37 +28,36 @@ def list_instances(compute, project, zone):
 # [END list_instances]
 
 # [START create_instance_group]
-def create_instance_group(compute, project, zone, igname):
+def create_instance_group(compute, project, zone, network):
     """ Create the new instance group """
-    network_response = compute.network().get(
-        project=project, network='devops').execute()
-    network = network_response['selflink']
-
-    subnetwork_response = compute.subnetwork().get(
-        project=project, region=zone, subnetwork='buildservers').execute()
-    subnetwork = subnetwork_response['selfLink']
-
+    network_response = compute.networks().get(
+        project=project, network='devops-internal').execute()
+    network = network_response['selfLink']
     config = {
         'description': 'Instance Group for build server',
-        'name': igname,
+        'name': 'buildservergroup',
         'network': network,
         'region': zone,
-        'subnetwork': subnetwork
-    }
+        }
 
     return compute.instanceGroups().insert(
         project=project,
         zone=zone,
+        network=network,
         body=config).execute()
 # [END create_instance_group]
 
 # [START create_instance]
-def create_instance(compute, project, zone, servername):
+def create_instance(compute, project, zone, name):
     """ Create the new instance """
     # Get the latest Debian Jessie image.
     image_response = compute.images().getFromFamily(
         project='debian-cloud', family='debian-8').execute()
     source_disk_image = image_response['selfLink']
+
+    network_response = compute.network().get(
+        project=project, network='devops-internal').execute()
+    network = network_response['selflink']
 
     # Configure the machine
     machine_type = "zones/%s/machineTypes/n1-standard-1" % zone
@@ -66,7 +65,7 @@ def create_instance(compute, project, zone, servername):
         os.path.join(
             os.path.dirname(__file__), 'sscript.sh'), 'r').read()
     config = {
-        'name': servername,
+        'name': name,
         'machineType': machine_type,
 
         # Specify the boot disk and the image to use as a source.
@@ -83,7 +82,7 @@ def create_instance(compute, project, zone, servername):
         # Specify a network interface with NAT to access the public
         # internet.
         'networkInterfaces': [{
-            'network': 'global/networks/default',
+            'network': network,
             'accessConfigs': [
                 {'type': 'ONE_TO_ONE_NAT', 'name': 'External NAT'}
             ]
@@ -143,13 +142,13 @@ def wait_for_operation(compute, project, zone, operation):
 # [END artifact upload]
 
 # [Build the instance]
-def main(project, zone, igname, instance_name, wait=False):
+def main(project, zone, instance_name, wait=False):
     """ Execution of the steps """
     compute = googleapiclient.discovery.build('compute', 'v1')
 
     print 'Creating Instance Group...'
 
-    operation = create_instance_group(compute, project, zone, igname)
+    operation = create_instance_group(compute, project, zone, network)
     wait_for_operation(compute, project, zone, operation['name'])
 
     instancegroups = list_instance_groups(compute, project, zone)
@@ -179,17 +178,25 @@ if __name__ == '__main__':
     PARSER = argparse.ArgumentParser(
         description=__doc__,
         formatter_class=argparse.RawDescriptionHelpFormatter)
-    PARSER.add_argument('project_id', help='Your Google Cloud project ID.')
+    PARSER.add_argument(
+        '--project_id',
+        default=os.environ.get('GOOGLE_PROJECT', None),
+        help='Your Google Cloud project ID.')
     PARSER.add_argument(
         '--zone',
-        default='us-central1-f',
+        default='us-west1-b',
         help='Compute Engine zone to deploy to.')
     PARSER.add_argument(
-        '--igname', default='demo-instance', help='Instance group name.')
+        '--name',
+        default='demo-instance',
+        help='New instance name.')
     PARSER.add_argument(
-        '--name', default='demo-instance', help='New instance name.')
+        '--network',
+        default='devops-internal',
+        help='Provide an existing network name'
+    )
 
     ARGS = PARSER.parse_args()
 
-    main(ARGS.project_id, ARGS.zone, ARGS.igname, ARGS.name)
+    main(ARGS.project_id, ARGS.zone, ARGS.name, ARGS.network)
 # [END run]
